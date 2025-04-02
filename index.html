@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>중세 카드 배틀</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #eee;
+      text-align: center;
+      padding: 30px;
+    }
+    .team {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .card {
+      border: 2px solid #333;
+      border-radius: 10px;
+      padding: 10px;
+      margin: 5px;
+      width: 160px;
+      background: #fff;
+      box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+      animation: fade-in 0.6s ease;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+    .card img {
+      width: 100%;
+      border-radius: 6px;
+      margin-bottom: 5px;
+    }
+    .floating-damage {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-weight: bold;
+      color: red;
+      font-size: 1.2rem;
+      animation: float-up 0.8s ease forwards;
+      pointer-events: none;
+    }
+    .slash-effect {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      font-size: 2rem;
+      color: crimson;
+      animation: slash 0.5s ease forwards;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    @keyframes slash {
+      0% { transform: scale(0) rotate(0deg); opacity: 1; }
+      100% { transform: scale(2) rotate(180deg); opacity: 0; }
+    }
+    #turn-indicator {
+      font-size: 1.5rem;
+      font-weight: bold;
+      margin: 15px 0;
+      color: #222;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 1rem;
+      margin: 5px;
+    }
+    .battle-log {
+      background: #fff;
+      padding: 10px;
+      margin-top: 20px;
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #aaa;
+    }
+    @keyframes fade-in {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes shake {
+      0% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      50% { transform: translateX(5px); }
+      75% { transform: translateX(-5px); }
+      100% { transform: translateX(0); }
+    }
+    @keyframes hit {
+      0% { box-shadow: 0 0 10px red; }
+      100% { box-shadow: none; }
+    }
+    .attack {
+      animation: shake 0.4s ease;
+    }
+    .hit {
+      animation: hit 0.4s ease;
+    }
+    .dead {
+      opacity: 0.4;
+      filter: grayscale(100%);
+    }
+  </style>
+</head>
+<body>
+  <h1>⚔️ 중세 기사 카드 배틀 ⚔️</h1>
+  <div id="turn-indicator">🎯 내 턴입니다</div>
+  <button onclick="drawCards()">🃏 카드 뽑기</button>
+  <button id="stopBtn" onclick="stopBattle()">⏸️ 정지</button>
+  <button id="resumeBtn" onclick="resumeBattle()">▶️ 계속</button>
+
+  <h2>🛡️ 우리 팀</h2>
+  <div id="player-team" class="team"></div>
+
+  <h2>💀 적 팀</h2>
+  <div id="enemy-team" class="team"></div>
+
+  <div class="battle-log" id="log"></div>
+
+  <script>
+    const cardPool = [
+      { name: "Knight", atk: 7, def: 5, hp: 20, img: "img/knight.png" },
+      { name: "Assassin", atk: 9, def: 3, hp: 16, img: "img/assassin.png" },
+      { name: "Shield Bearer", atk: 4, def: 9, hp: 25, img: "img/shield.png" },
+      { name: "Fire Mage", atk: 8, def: 4, hp: 18, img: "img/mage.png" },
+      { name: "Holy Priest", atk: 3, def: 6, hp: 22, img: "img/priest.png" },
+      { name: "Swordsman", atk: 6, def: 6, hp: 20, img: "img/sword.png" },
+      { name: "Paladin", atk: 5, def: 8, hp: 23, img: "img/paladin.png" },
+      { name: "Dark Archer", atk: 8, def: 2, hp: 17, img: "img/archer.png" }
+    ];
+
+    let playerTeam = [];
+    let enemyTeam = [];
+    let selectedPlayer = null;
+    let stopFlag = false;
+
+    function getRandomTeam() {
+      return [...cardPool]
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 5)
+        .map(card => ({ ...card, hp: card.hp }));
+    }
+
+    function drawCards() {
+      playerTeam = getRandomTeam();
+      enemyTeam = getRandomTeam();
+      renderTeam(playerTeam, "player-team", "player");
+      renderTeam(enemyTeam, "enemy-team", "enemy");
+      log("🃏 새로운 팀이 뽑혔습니다. 내 카드를 선택한 후 적을 클릭해 공격하세요.");
+      stopFlag = false;
+      updateTurnIndicator("🎯 내 턴입니다");
+    }
+
+    function renderTeam(team, containerId, teamType) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = "";
+      team.forEach((card, idx) => {
+        const div = document.createElement("div");
+        div.className = "card" + (card.hp <= 0 ? " dead" : "");
+        div.innerHTML = `
+          <img src="${card.img}" alt="${card.name}">
+          <strong>${card.name}</strong><br>
+          ATK: ${card.atk}<br>
+          HP: ${card.hp}
+        `;
+        div.onclick = () => handleCardClick(teamType, idx);
+        container.appendChild(div);
+      });
+    }
+
+    function showDamage(div, amount) {
+      const dmg = document.createElement("div");
+      dmg.className = "floating-damage";
+      dmg.textContent = `-${amount}`;
+      div.appendChild(dmg);
+      setTimeout(() => div.removeChild(dmg), 800);
+    }
+
+    function showSlashEffect(div) {
+      const slash = document.createElement("div");
+      slash.className = "slash-effect";
+      slash.textContent = "🔪";
+      div.appendChild(slash);
+      setTimeout(() => div.removeChild(slash), 500);
+    }
+
+    function updateTurnIndicator(text) {
+      document.getElementById("turn-indicator").textContent = text;
+    }
+
+    function handleCardClick(teamType, index) {
+      if (stopFlag) return;
+      if (teamType === "player") {
+        if (playerTeam[index].hp <= 0) return;
+        selectedPlayer = index;
+        log(`✅ ${playerTeam[index].name} 선택됨. 이제 적을 클릭하세요.`);
+      } else if (teamType === "enemy" && selectedPlayer !== null) {
+        const attacker = playerTeam[selectedPlayer];
+        const target = enemyTeam[index];
+        if (attacker.hp <= 0 || target.hp <= 0) return;
+
+        const enemyCard = document.getElementById("enemy-team").children[index];
+        enemyCard.classList.add("attack", "hit");
+        showDamage(enemyCard, attacker.atk);
+        showSlashEffect(enemyCard);
+        setTimeout(() => enemyCard.classList.remove("attack", "hit"), 400);
+
+        target.hp -= attacker.atk;
+        log(`⚔️ ${attacker.name} → ${target.name} 에게 ${attacker.atk} 데미지!`);
+
+        if (target.hp <= 0) {
+          log(`💥 ${target.name} 격파!`);
+        }
+
+        renderTeam(playerTeam, "player-team", "player");
+        renderTeam(enemyTeam, "enemy-team", "enemy");
+        selectedPlayer = null;
+
+        checkGameEnd();
+
+        if (!stopFlag) {
+          updateTurnIndicator("🤖 적의 턴입니다");
+          setTimeout(aiTurn, 1000);
+        }
+      }
+    }
+
+    function aiTurn() {
+      if (stopFlag) return;
+      const attackers = enemyTeam.filter(c => c.hp > 0);
+      const defenders = playerTeam.filter(c => c.hp > 0);
+      if (attackers.length === 0 || defenders.length === 0) return;
+
+      const attackerIndex = enemyTeam.findIndex(c => c.hp > 0);
+      const defenderIndex = playerTeam.findIndex(c => c.hp > 0);
+      const attacker = enemyTeam[attackerIndex];
+      const target = playerTeam[defenderIndex];
+
+      const playerCard = document.getElementById("player-team").children[defenderIndex];
+      playerCard.classList.add("attack", "hit");
+      showDamage(playerCard, attacker.atk);
+      showSlashEffect(playerCard);
+      setTimeout(() => playerCard.classList.remove("attack", "hit"), 400);
+
+      target.hp -= attacker.atk;
+      log(`🤖 ${attacker.name} (AI) → ${target.name} 에게 ${attacker.atk} 데미지!`);
+
+      if (target.hp <= 0) {
+        log(`💥 ${target.name} 전사...`);
+      }
+
+      renderTeam(playerTeam, "player-team", "player");
+      renderTeam(enemyTeam, "enemy-team", "enemy");
+      checkGameEnd();
+      updateTurnIndicator("🎯 내 턴입니다");
+    }
+
+    function checkGameEnd() {
+      const aliveEnemies = enemyTeam.some(c => c.hp > 0);
+      const alivePlayers = playerTeam.some(c => c.hp > 0);
+      if (!aliveEnemies) {
+        log("🎉 적 팀 전멸! 승리!");
+        stopFlag = true;
+        updateTurnIndicator("✅ 전투 종료");
+      }
+      if (!alivePlayers) {
+        log("💀 우리 팀 전멸… 패배!");
+        stopFlag = true;
+        updateTurnIndicator("❌ 전투 종료");
+      }
+    }
+
+    function stopBattle() {
+      stopFlag = true;
+      log("⏸️ 전투가 정지되었습니다.");
+    }
+
+    function resumeBattle() {
+      stopFlag = false;
+      log("▶️ 전투가 재개되었습니다.");
+    }
+
+    function log(msg) {
+      const logDiv = document.getElementById("log");
+      logDiv.innerHTML += msg + "<br>";
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+  </script>
+</body>
+</html>
